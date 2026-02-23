@@ -1,0 +1,20 @@
+{
+"appFunctions": {
+  "quote-function": {
+      "file": "function.js",
+      "secrets": [],
+      "endpoint": {
+        "path": "fetch-quote",
+        "method": ["GET"]
+      }
+  },
+  "create-deal": {
+      "file": "create-deal.js",
+      "secrets": [],
+      "endpoint": {
+        "path": "create-deal",
+        "method": ["GET", "POST"]
+      }
+  }
+}
+}

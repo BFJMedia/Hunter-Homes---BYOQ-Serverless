@@ -1,0 +1,16 @@
+{
+  "name": "Serverless function app",
+  "description": "This app runs a serverless function for HunterHomes BYOQ Form.",
+  "scopes": [
+    "crm.objects.contacts.read",
+    "crm.objects.contacts.write",
+    "crm.objects.deals.read",
+    "crm.objects.deals.write",
+    "crm.objects.line_items.read",
+    "crm.objects.line_items.write",
+    "crm.schemas.contacts.read",
+    "crm.schemas.deals.read"
+  ],
+  "uid": "serverless-function-app",
+  "public": false
+}
