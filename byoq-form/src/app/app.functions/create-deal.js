@@ -189,6 +189,7 @@ exports.main = async (context) => {
       preferred_building_type_byoq: data.preferred_building_type_byoq || data.type || data.building_type || '',
       click_ons_byoq: data.click_ons_byoq || data.click_ons || '',
       estimated_investment_byoq: data.estimated_investment_byoq || data.running_total || data.estimated_investment || '',
+      street: data.build_address || data.street || '',
       build_location_byoq: data.build_location_byoq || data.build_location || data.postcode || '',
       hunter_homes_design_byoq: data.hunter_homes_design_byoq || data.selected_design || data.design_name || '',
       selected_facade_byoq: data.selected_facade_byoq || data.selected_facade || ''
@@ -246,47 +247,66 @@ exports.main = async (context) => {
       }
     }
 
-    // --- 2.5b: Associate existing line item IDs directly (facade, etc.) ---
-    // Build list from line_item_ids array, excluding house_line_item_id (it's a product ID, handled above)
-    let lineItemIds = data.line_item_ids || data.line_items || [];
-    if (typeof lineItemIds === 'string') {
-      lineItemIds = lineItemIds.split(',').map(id => id.trim()).filter(id => id);
+    // --- 2.5b: Associate facade line item ID directly (it's an existing line item ID) ---
+    const facadeLineItemId = data.facade_line_item_id ? String(data.facade_line_item_id) : null;
+    if (facadeLineItemId) {
+      try {
+        await hubspotClient.crm.lineItems.associationsApi.create(
+          facadeLineItemId,
+          'deals',
+          dealId,
+          'line_item_to_deal'
+        );
+        console.log('✓ Associated facade line item', facadeLineItemId, 'to deal', dealId);
+        lineItemsAssociated.push(facadeLineItemId);
+      } catch (facadeLineItemError) {
+        console.error('✗ Failed to associate facade line item', facadeLineItemId);
+        console.error('  Message:', facadeLineItemError.message);
+        lineItemsFailed.push({ id: facadeLineItemId, type: 'facade_line_item', error: facadeLineItemError.message });
+      }
     }
 
-    // Remove house product ID from the array since it was handled in 2.5a
-    lineItemIds = lineItemIds.filter(id => id !== houseProductId);
-
-    // Add facade_line_item_id if not already in array
-    if (data.facade_line_item_id && !lineItemIds.includes(String(data.facade_line_item_id))) {
-      lineItemIds.push(String(data.facade_line_item_id));
+    // --- 2.5c: Create line items from product IDs (inclusions, offers, upgrades) ---
+    let otherProductIds = data.line_item_ids || data.line_items || [];
+    if (typeof otherProductIds === 'string') {
+      otherProductIds = otherProductIds.split(',').map(id => id.trim()).filter(id => id);
     }
 
-    if (lineItemIds.length > 0) {
-      console.log('Associating', lineItemIds.length, 'existing line items to deal:', lineItemIds);
+    // Remove house product ID from the array if present (already handled in 2.5a)
+    otherProductIds = otherProductIds.filter(id => id !== houseProductId);
 
-      for (const lineItemId of lineItemIds) {
+    if (otherProductIds.length > 0) {
+      console.log('Creating line items from', otherProductIds.length, 'product IDs:', otherProductIds);
+
+      for (const productId of otherProductIds) {
         try {
+          const lineItemResponse = await hubspotClient.crm.lineItems.basicApi.create({
+            properties: {
+              hs_product_id: productId,
+              quantity: '1'
+            }
+          });
+          const newLineItemId = lineItemResponse.id;
+          console.log('✓ Created line item', newLineItemId, 'from product', productId);
+
           await hubspotClient.crm.lineItems.associationsApi.create(
-            lineItemId,
+            newLineItemId,
             'deals',
             dealId,
             'line_item_to_deal'
           );
-          console.log('✓ Associated line item', lineItemId, 'to deal', dealId);
-          lineItemsAssociated.push(lineItemId);
-        } catch (lineItemAssocError) {
-          const errorBody = lineItemAssocError.body || lineItemAssocError.response?.body || {};
-          console.error('✗ Failed to associate line item', lineItemId, 'to deal', dealId);
-          console.error('  Status:', lineItemAssocError.statusCode || lineItemAssocError.code);
-          console.error('  Message:', lineItemAssocError.message);
-          console.error('  Body:', JSON.stringify(errorBody));
-          lineItemsFailed.push({ id: lineItemId, error: lineItemAssocError.message, status: lineItemAssocError.statusCode });
+          console.log('✓ Associated line item', newLineItemId, 'to deal', dealId);
+          lineItemsAssociated.push(newLineItemId);
+        } catch (lineItemError) {
+          console.error('✗ Failed to create/associate line item from product', productId);
+          console.error('  Message:', lineItemError.message);
+          lineItemsFailed.push({ id: productId, type: 'product', error: lineItemError.message });
         }
       }
 
       console.log('Line items complete. Associated:', lineItemsAssociated.length, '/ Failed:', lineItemsFailed.length);
     } else {
-      console.log('No existing line item IDs to associate');
+      console.log('No additional product IDs to process');
     }
 
     // ========================================

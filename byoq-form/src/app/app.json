@@ -8,6 +8,7 @@
     "crm.objects.deals.write",
     "crm.objects.line_items.read",
     "crm.objects.line_items.write",
+    "crm.objects.products.read",
     "crm.schemas.contacts.read",
     "crm.schemas.deals.read"
   ],
