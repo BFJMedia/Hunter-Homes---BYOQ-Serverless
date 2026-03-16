@@ -15,6 +15,14 @@
         "path": "create-deal",
         "method": ["GET", "POST"]
       }
+  },
+  "email-quote": {
+      "file": "email-quote.js",
+      "secrets": [],
+      "endpoint": {
+        "path": "email-quote",
+        "method": ["POST"]
+      }
   }
 }
 }
