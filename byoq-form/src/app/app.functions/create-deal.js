@@ -138,6 +138,37 @@ exports.main = async (context) => {
     const lastName = data.lastname || data.last_name || '';
     const dealName = `${firstName} ${lastName} [BYOQ]`.trim();
 
+    // Map form building type to CRM home_range dropdown values
+    const buildingTypeToHomeRange = {
+      'Single Storey Designs':              'Single Story',
+      'Single Storey Designs - Rear Access':'Single Story - Rear Access',
+      'Acreage Homes':                      'Acreage',
+      'Double Storey Homes':                'Double Story',
+      'Dual Living Homes':                  'Dual Living / Duplex',
+      'Split Level Homes':                  'Split Level'
+    };
+    const rawBuildingType = data.type || data.building_type || '';
+    const homeRange = buildingTypeToHomeRange[rawBuildingType] || rawBuildingType;
+
+    // Build home_design value: "House Name Variant" (e.g. "Albion 283")
+    // design_name from form is "Branxton - 265" → normalise to "Branxton 265"
+    // Only use it if it contains a number — bare names like "Rockleigh" won't match the dropdown
+    const rawDesignName = (data.design_name || '').replace(/\s*-\s*/g, ' ').trim();
+    const homeDesignCandidate = rawDesignName || data.selected_design || '';
+    const homeDesign = /\d/.test(homeDesignCandidate) ? homeDesignCandidate : '';
+
+    // Build home_facade value: "Facade Name Façade" (e.g. "Aurora Façade")
+    // CRM facade_name stores "Aurora Facade" (plain c) — replace with accented "Façade"
+    const rawFacade = data.selected_facade || '';
+    const homeFacade = rawFacade.endsWith('Façade')
+      ? rawFacade
+      : rawFacade.endsWith('Facade')
+        ? rawFacade.slice(0, -6) + 'Façade'
+        : rawFacade ? `${rawFacade} Façade` : '';
+
+    // Parse running total as a number for the amount currency field
+    const amount = parseFloat((data.running_total || '').toString().replace(/,/g, '')) || 0;
+
     // Normalise region to CRM-accepted build_region values
     const regionToCRMValue = {
       // Hunter
@@ -192,7 +223,12 @@ exports.main = async (context) => {
       street: data.build_address || data.street || '',
       build_location_byoq: data.build_location_byoq || data.build_location || data.postcode || '',
       hunter_homes_design_byoq: data.hunter_homes_design_byoq || data.selected_design || data.design_name || '',
-      selected_facade_byoq: data.selected_facade_byoq || data.selected_facade || ''
+      selected_facade_byoq: data.selected_facade_byoq || data.selected_facade || '',
+      home_range: homeRange,
+      home_design: homeDesign,
+      home_facade: homeFacade,
+      amount: amount || '',
+      floorplan_url: data.floorplan_image_url || ''
     };
 
     // Remove empty properties
@@ -247,10 +283,20 @@ exports.main = async (context) => {
       }
     }
 
-    // --- 2.5b: Associate facade line item ID directly (it's an existing line item ID) ---
-    const facadeLineItemId = data.facade_line_item_id ? String(data.facade_line_item_id) : null;
-    if (facadeLineItemId) {
+    // --- 2.5b: Create facade line item from product_record_id (Product ID from Facade CRM object) ---
+    const facadeProductId = data.facade_product_id ? String(data.facade_product_id) : null;
+    if (facadeProductId) {
       try {
+        console.log('Creating facade line item from product ID:', facadeProductId);
+        const facadeLineItemResponse = await hubspotClient.crm.lineItems.basicApi.create({
+          properties: {
+            hs_product_id: facadeProductId,
+            quantity: '1'
+          }
+        });
+        const facadeLineItemId = facadeLineItemResponse.id;
+        console.log('✓ Created facade line item:', facadeLineItemId);
+
         await hubspotClient.crm.lineItems.associationsApi.create(
           facadeLineItemId,
           'deals',
@@ -260,20 +306,20 @@ exports.main = async (context) => {
         console.log('✓ Associated facade line item', facadeLineItemId, 'to deal', dealId);
         lineItemsAssociated.push(facadeLineItemId);
       } catch (facadeLineItemError) {
-        console.error('✗ Failed to associate facade line item', facadeLineItemId);
+        console.error('✗ Failed to create/associate facade line item from product', facadeProductId);
         console.error('  Message:', facadeLineItemError.message);
-        lineItemsFailed.push({ id: facadeLineItemId, type: 'facade_line_item', error: facadeLineItemError.message });
+        lineItemsFailed.push({ id: facadeProductId, type: 'facade_product', error: facadeLineItemError.message });
       }
     }
 
     // --- 2.5c: Create line items from product IDs (inclusions, offers, upgrades) ---
-    let otherProductIds = data.line_item_ids || data.line_items || [];
+    let otherProductIds = data.line_item_ids || data.line_items || data.upgrades_line_items || [];
     if (typeof otherProductIds === 'string') {
       otherProductIds = otherProductIds.split(',').map(id => id.trim()).filter(id => id);
     }
 
-    // Remove house product ID from the array if present (already handled in 2.5a)
-    otherProductIds = otherProductIds.filter(id => id !== houseProductId);
+    // Remove house and facade product IDs from the array if present (already handled in 2.5a/b)
+    otherProductIds = otherProductIds.filter(id => id !== houseProductId && id !== facadeProductId);
 
     if (otherProductIds.length > 0) {
       console.log('Creating line items from', otherProductIds.length, 'product IDs:', otherProductIds);
