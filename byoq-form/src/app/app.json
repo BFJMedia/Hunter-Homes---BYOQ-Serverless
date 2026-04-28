@@ -1,5 +1,5 @@
 {
-  "name": "Serverless function app",
+  "name": "Build Your Own Quote",
   "description": "This app runs a serverless function for HunterHomes BYOQ Form.",
   "scopes": [
     "crm.objects.contacts.read",

@@ -157,14 +157,23 @@ exports.main = async (context) => {
     const homeDesignCandidate = rawDesignName || data.selected_design || '';
     const homeDesign = /\d/.test(homeDesignCandidate) ? homeDesignCandidate : '';
 
-    // Build home_facade value: "Facade Name Façade" (e.g. "Aurora Façade")
-    // CRM facade_name stores "Aurora Facade" (plain c) — replace with accented "Façade"
+    // Build home_facade value matching the HubSpot enum (e.g. "Aurora Façade", "Glenoak V1 Façade")
+    // CRM facade_name may store "Aurora Facade" (plain c) or "Glenoak Facade V1" (word in middle)
     const rawFacade = data.selected_facade || '';
-    const homeFacade = rawFacade.endsWith('Façade')
-      ? rawFacade
-      : rawFacade.endsWith('Facade')
-        ? rawFacade.slice(0, -6) + 'Façade'
-        : rawFacade ? `${rawFacade} Façade` : '';
+    let homeFacade = '';
+    if (rawFacade) {
+      // "Glenoak Facade V1" → "Glenoak V1 Façade" (Fa[çc]ade in the middle before a suffix)
+      const inlineMatch = rawFacade.match(/^(.+?)\s+Fa[çc]ade\s+(.+)$/i);
+      if (inlineMatch) {
+        homeFacade = `${inlineMatch[1]} ${inlineMatch[2]} Façade`;
+      } else if (rawFacade.endsWith('Façade')) {
+        homeFacade = rawFacade;
+      } else if (rawFacade.endsWith('Facade')) {
+        homeFacade = rawFacade.slice(0, -6) + 'Façade';
+      } else {
+        homeFacade = `${rawFacade} Façade`;
+      }
+    }
 
     // Parse running total as a number for the amount currency field
     const amount = parseFloat((data.running_total || '').toString().replace(/,/g, '')) || 0;
